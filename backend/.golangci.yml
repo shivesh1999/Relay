@@ -1,0 +1,44 @@
+# golangci-lint configuration
+# Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# Run: golangci-lint run ./...
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+    - bin
+    - tmp
+    - tests
+
+linters:
+  enable:
+    - errcheck         # Checks unchecked errors
+    - govet            # Go vet equivalent
+    - staticcheck      # Advanced static analysis
+    - varcheck         # Unused variables
+    - deadcode         # Unused code
+    - gosimple         # Code simplification
+    - misspell         # Typos in comments
+    - ineffassign      # Ineffectual assignments
+    - gofmt            # Code formatting
+    - goimports        # Unused imports
+    - gocritic         # Code review suggestions
+    - unconvert        # Unnecessary type conversions
+    - unparam          # Unused function parameters
+    - prealloc         # Slice allocation optimization
+
+  disable-all: false
+  fast: false
+
+issues:
+  # Ignore certain issues
+  exclude:
+    - "exported .* should have comment or be unexported"
+  
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
