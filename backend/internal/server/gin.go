@@ -8,18 +8,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/relay/backend/internal/auth"
 	"github.com/relay/backend/internal/config"
+	"github.com/relay/backend/internal/db"
 	"github.com/relay/backend/internal/logger"
+	"github.com/relay/backend/internal/user"
 )
 
 type Server struct {
-	engine *gin.Engine
-	cfg    *config.Config
-	log    *logger.Logger
-	srv    *http.Server
+	engine      *gin.Engine
+	cfg         *config.Config
+	log         *logger.Logger
+	db          *db.DB
+	authHandler *auth.Handler
+	srv         *http.Server
 }
 
-func New(cfg *config.Config, log *logger.Logger) *Server {
+func New(cfg *config.Config, log *logger.Logger, dbConn *db.DB) *Server {
 	if cfg.IsProd() {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -28,10 +33,16 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 
 	engine := gin.New()
 
+	userRepo := user.NewPostgresRepository(dbConn.Conn(), log)
+	authService := auth.NewService(userRepo, log, cfg.Auth)
+	authHandler := auth.NewHandler(authService)
+
 	server := &Server{
-		engine: engine,
-		cfg:    cfg,
-		log:    log,
+		engine:      engine,
+		cfg:         cfg,
+		log:         log,
+		db:          dbConn,
+		authHandler: authHandler,
 	}
 
 	server.registerMiddleware()
@@ -89,18 +100,52 @@ func corsMiddleware() gin.HandlerFunc {
 
 func (s *Server) registerRoutes() {
 	s.engine.GET("/health", s.healthHandler)
+	s.engine.GET("/ready", s.readyHandler)
 
 	v1 := s.engine.Group("/api/v1")
 	{
+		authGroup := v1.Group("/auth")
+		{
+			authGroup.POST("/register", s.authHandler.Register)
+			authGroup.POST("/login", s.authHandler.Login)
+		}
+
 		v1.GET("/ping", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "pong"})
 		})
+
+		protected := v1.Group("")
+		protected.Use(auth.Middleware(s.authHandler.Service()))
+		{
+			protected.GET("/me", s.authHandler.Me)
+		}
 	}
 }
 
 func (s *Server) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
+		"service": "relay-api",
+		"time":    time.Now().UTC(),
+	})
+}
+
+func (s *Server) readyHandler(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	if s.db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unready", "reason": "database unavailable"})
+		return
+	}
+
+	if err := s.db.Ping(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unready", "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "ready",
 		"service": "relay-api",
 		"time":    time.Now().UTC(),
 	})

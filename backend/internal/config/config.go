@@ -13,6 +13,7 @@ type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	Redis    RedisConfig
+	Auth     AuthConfig
 	App      AppConfig
 }
 
@@ -25,13 +26,16 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	DBName   string
-	SSLMode  string
-	MaxConn  int
+	Host                   string
+	Port                   int
+	User                   string
+	Password               string
+	DBName                 string
+	SSLMode                string
+	MaxConn                int
+	MaxIdleConns           int
+	ConnMaxIdleTimeSeconds int
+	ConnMaxLifetimeSeconds int
 }
 
 type RedisConfig struct {
@@ -39,6 +43,11 @@ type RedisConfig struct {
 	Port     int
 	Password string
 	DB       int
+}
+
+type AuthConfig struct {
+	JWTSecret             string
+	AccessTokenTTLMinutes int
 }
 
 type AppConfig struct {
@@ -57,19 +66,26 @@ func Load() *Config {
 			MaxBodySize: int64(getEnvInt("SERVER_MAX_BODY_SIZE", 1048576)),
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnvInt("DB_PORT", 5432),
-			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", ""),
-			DBName:   getEnv("DB_NAME", "relay"),
-			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
-			MaxConn:  getEnvInt("DB_MAX_CONN", 25),
+			Host:                   getEnv("DB_HOST", "localhost"),
+			Port:                   getEnvInt("DB_PORT", 5432),
+			User:                   getEnv("DB_USER", "postgres"),
+			Password:               getEnv("DB_PASSWORD", ""),
+			DBName:                 getEnv("DB_NAME", "relay"),
+			SSLMode:                getEnv("DB_SSL_MODE", "disable"),
+			MaxConn:                getEnvInt("DB_MAX_CONN", 25),
+			MaxIdleConns:           getEnvInt("DB_MAX_IDLE_CONNS", 10),
+			ConnMaxIdleTimeSeconds: getEnvInt("DB_CONN_MAX_IDLE_TIME", 300),
+			ConnMaxLifetimeSeconds: getEnvInt("DB_CONN_MAX_LIFETIME", 3600),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "localhost"),
 			Port:     getEnvInt("REDIS_PORT", 6379),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getEnvInt("REDIS_DB", 0),
+		},
+		Auth: AuthConfig{
+			JWTSecret:             getEnv("JWT_SECRET", "dev-only-change-me"),
+			AccessTokenTTLMinutes: getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 60),
 		},
 		App: AppConfig{
 			Env:   getEnv("APP_ENV", "development"),
@@ -91,6 +107,18 @@ func (c *Config) Validate() error {
 
 	if c.Database.DBName == "" {
 		return fmt.Errorf("database name is required (DB_NAME env var)")
+	}
+
+	if c.Auth.JWTSecret == "" {
+		return fmt.Errorf("JWT_SECRET is required")
+	}
+
+	if c.IsProd() && c.Auth.JWTSecret == "dev-only-change-me" {
+		return fmt.Errorf("JWT_SECRET must be changed in production")
+	}
+
+	if c.Auth.AccessTokenTTLMinutes < 1 {
+		return fmt.Errorf("ACCESS_TOKEN_TTL_MINUTES must be at least 1")
 	}
 
 	validEnvs := map[string]bool{

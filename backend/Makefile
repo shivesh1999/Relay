@@ -72,10 +72,11 @@ clean: ## Clean build artifacts and temporary files
 	rm -f coverage.out coverage.html
 	@echo "$(GREEN)Clean complete$(NC)"
 
-install-tools: ## Install development tools (air, golangci-lint, etc.)
+install-tools: ## Install development tools (air, golangci-lint, migrate CLI, etc.)
 	@echo "$(BLUE)Installing development tools...$(NC)"
 	go install github.com/cosmtrek/air@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "$(GREEN)Tools installed$(NC)"
 
 # Docker targets
@@ -104,6 +105,10 @@ db-migrate-up: ## Run pending migrations (requires migrate CLI)
 db-migrate-down: ## Rollback last migration
 	@echo "$(BLUE)Rolling back database migration...$(NC)"
 	migrate -path ./migrations -database "$(DATABASE_URL)" down 1
+
+db-migrate-status: ## Print current migration version
+	@echo "$(BLUE)Checking migration status...$(NC)"
+	migrate -path ./migrations -database "$(DATABASE_URL)" version
 
 # Common workflow targets
 setup: tidy install-tools ## Setup project: install dependencies and tools

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/relay/backend/internal/config"
+	"github.com/relay/backend/internal/db"
 	"github.com/relay/backend/internal/logger"
 	"github.com/relay/backend/internal/server"
 )
@@ -20,12 +21,23 @@ func main() {
 		"version", "0.0.1",
 	)
 
-	httpServer := server.New(cfg, appLogger)
+	dbConn, err := db.New(cfg, appLogger)
+	if err != nil {
+		appLogger.Error("failed to initialize database",
+			"error", err.Error(),
+		)
+		os.Exit(1)
+	}
+	defer func() {
+		_ = dbConn.Close()
+	}()
+
+	httpServer := server.New(cfg, appLogger, dbConn)
 
 	sigChan := make(chan os.Signal, 1)
+	errChan := make(chan error, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	errChan := make(chan error, 1)
 	go func() {
 		if err := httpServer.Run(); err != nil {
 			errChan <- err
